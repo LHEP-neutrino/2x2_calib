@@ -205,7 +205,7 @@ class calibWvfms:
         return None
 
 
-    def plot_wvfms(self, event, adc, chan, xlim = None, threshold=None, peakFinder=False, minWidth=5, baseline=None, verbose=False):
+    def plot_wvfm(self, event, adc, chan, xlim=None, threshold=None, peakFinder=False, minWidth=5, baseline=None, verbose=False, show_plot=False, output=None):
         '''
         Plot the light waveforms.
 
@@ -216,19 +216,24 @@ class calibWvfms:
             None
         '''
         # Compute the x-axis coordinate
-        x_ticks = np.arange(0, self.light_wvfms[0].shape[-1],  1)
+        x_ticks = np.arange(0, self.light_wvfms.shape[-1],  1)
 
+        # print(x_ticks)
 
         # Setup the plot
         fig_wvfm = plt.figure(figsize=[12.8, 4.8])
         ax_wvfm = fig_wvfm.subplots()
-        if (xlim != None):
-            ax_wvfm.set_xlim(xlim)
+        
+        if (xlim is None):
+            xlim = [x_ticks[0], x_ticks[-1]+1]
+
+        ax_wvfm.set_xticks(np.arange(xlim[0], xlim[-1]+50, 50))
+        ax_wvfm.set_xlim(xlim)
         ax_wvfm.set_xlabel('ticks')
-        ax_wvfm.set_ylabel('ADC unit')
+        ax_wvfm.set_ylabel('ADC value')
         ax_wvfm.grid(True)
 
-        ax_wvfm.plot(x_ticks, self.light_wvfms[event][adc,chan], label=f'Event {event}, ADC {adc}, Chan. {chan}', marker='.', ls='')
+        ax_wvfm.plot(x_ticks, self.light_wvfms[event][adc,chan], marker='.', ls='', label=f' Data points')# Event {event}, ADC {adc}, Chan. {chan}')
         ax_wvfm.plot(x_ticks, self.light_wvfms[event][adc,chan], marker='', ls='-', c='r', alpha=0.3)
 
         if (threshold != None):
@@ -242,31 +247,158 @@ class calibWvfms:
 
         if (peakFinder==True):
             peak_idx, *peak_info = self._extract_peak(self.light_wvfms[event][adc,chan], minWidth, verbose)
-            
+            mean = peak_info[0]
 
             if (verbose==True):
-                mean = peak_info[0]
                 aboveMean_idx = peak_idx[np.where(self.light_wvfms[event][adc,chan][peak_idx] > mean)[0]]
                 belowMean_idx = peak_idx[np.where(self.light_wvfms[event][adc,chan][peak_idx] <= mean)[0]]
-                ax_wvfm.plot(aboveMean_idx, self.light_wvfms[event][adc,chan][aboveMean_idx], color='g', marker='x', ls='')
-                ax_wvfm.plot(belowMean_idx, self.light_wvfms[event][adc,chan][belowMean_idx], color='r', marker='x', ls='')
+                ax_wvfm.plot(aboveMean_idx, self.light_wvfms[event][adc,chan][aboveMean_idx], color='g', marker='x', ls='', label='Accepted peaks')
+                ax_wvfm.plot(belowMean_idx, self.light_wvfms[event][adc,chan][belowMean_idx], color='r', marker='x', ls='Discarded peaks')
 
-                ax_wvfm.hlines(peak_info[0], xlim[0], xlim[1], color='r', ls='--')
+                ax_wvfm.hlines(mean, xlim[0], xlim[1], color='r', ls='--', label='Mean')
 
                 self.Npeaks[event][adc,chan]=len(aboveMean_idx)
 
                 print(f'{len(aboveMean_idx)} peaks were found above the mean with a minWidth of {minWidth} and {len(belowMean_idx)} were cut out.')
 
             else:
-                ax_wvfm.plot(peak_idx, self.light_wvfms[event][adc,chan][peak_idx], color='r', marker='x', ls='')
+                ax_wvfm.plot(peak_idx, self.light_wvfms[event][adc,chan][peak_idx], color='g', marker='x', ls='', label='Peaks found')
+                ax_wvfm.hlines(mean, xlim[0], xlim[1], color='r', ls='--', label='Mean')
                 self.Npeaks[event][adc,chan]=len(peak_idx)
                 print(f'{len(peak_idx)} peaks were found with a minWidth of {minWidth} above the mean.')
 
         if (baseline != None):
             ax_wvfm.hlines(baseline, xlim[0], xlim[1], color='k', ls='--', label='Baseline')
 
+        ax_wvfm.legend()
+        ax_wvfm.set_title(f'Waveforms of Event {event} for ADC {adc}, Chan. {chan}')
+
+        if output is not None:
+            fig_wvfm.savefig(output)
+
+        if show_plot == False:
+            plt.close()
+
         return None
     
+    def plot_wvfms(self, events, adcs=None, chans=None, threshold=None, peakFinder=False, minWidth=5, baseline=None, save_plots=False, verbose=False, show_plots=False):
+        inputFile_name = self.filename.split(".")[0]
+
+        _, Nadc, Nchan, _ = self.light_wvfms.shape
+
+        if isinstance(events, int):
+            events = np.array([events, events+1])
+        elif (isinstance(events, (list, tuple)) and len(events) == 2):
+            events = np.array(events)
+        else:
+            print("Invalid 'events' input, should be int or ArrayLike")
+
+        if adcs is None:
+            adcs = np.array([0, Nadc])
+
+        if chans is None:
+            chans = np.array([0, Nchan])
+            
+
+        for i_event in range(*events):
+            for j_adc in range(*adcs):
+                    for k_chan in range(*chans):
+                        if save_plots is None:
+                            output_plot = None
+                        else:
+                            output_path = os.path.join(self.output_path, inputFile_name, f'adc{j_adc}', f'chan{k_chan}')
+                            os.makedirs(output_path, exist_ok=True)
+                            output_plot=f"{output_path}/Ev{i_event}_adc{j_adc}_chan{k_chan}_wvfm.png"
+
+                        self.plot_wvfm(i_event, j_adc, k_chan, threshold=threshold, peakFinder=peakFinder, minWidth=minWidth, baseline=baseline, verbose=verbose, output=output_plot, show_plot=show_plots)
+    
+        return None
+    
+    def _plot_summaryDC(self, adc, show_plot=False, output=None, peakFinder_minWidth=5):
+        Nevents, Nadc, Nchan, Nticks = self.light_wvfms.shape
+        # Compute the x-axis coordinate
+        x_chan = np.arange(0, Nchan,  1)
+
+        Nevents = 10
+
+        # Setup the plot
+        fig_summaryDC = plt.figure(figsize=[12.8, 4.8])
+        ax_summaryDC = fig_summaryDC.subplots()
+        
+        xlim = [x_chan[0], x_chan[-1]+1]
+
+        ax_summaryDC.set_xticks(np.arange(xlim[0], xlim[-1], 2))
+        ax_summaryDC.set_xlim(xlim)
+        ax_summaryDC.set_xlabel('Channel')
+        ax_summaryDC.set_ylabel('mean DC rate [MHz]')
+        ax_summaryDC.grid(True)
+
+        # Compute DC rate
+        print('begin find peak')
+        for i_event in range(Nevents):
+            for j_chan in range(Nchan):
+                print(f'event {i_event}, chan {j_chan}')
+                self.findPeak_wvfms(i_event, adc, j_chan, minWidth=peakFinder_minWidth)
+
+        peaks_sum = np.sum(self.Npeaks[:,adc,:], axis=0)
+        print(f' peaks sum shape{peaks_sum.shape}')
+        DC_rates = peaks_sum/(Nevents*Nticks*self.time_tick)
+
+        ax_summaryDC.plot(x_chan, DC_rates*10**-6, marker='.', ls='')
+
+        ax_summaryDC.legend()
+        ax_summaryDC.set_title(f'mean DC rate of ADC {adc} (over {Nevents} events)')
+
+        if output is not None:
+            fig_summaryDC.savefig(output)
+
+        if show_plot == False:
+            plt.close()
+
+        return None
+
+    
+    def plot_summaryDC(self, events=None, adcs=None, chans=None, threshold=None, peakFinder_minWidth=5, output=None, show_plots=False):
+        inputFile_name = self.filename.split(".")[0]
+
+        Nevents, Nadc, Nchan, _ = self.light_wvfms.shape
+
+        if events is None:
+            events = np.array([0, Nevents])
+        else:
+            if isinstance(events, int):
+                events = np.array([events, events+1])
+            elif (isinstance(events, (list, tuple)) and len(events) == 2):
+                events = np.array(events)
+            else:
+                print("Invalid 'events' input, should be None int or ArrayLike")
+
+        if adcs is None:
+            adcs = np.array([0, Nadc])
+        else:
+            if isinstance(adcs, int):
+                adcs = np.array([adcs, adcs+1])
+            elif (isinstance(adcs, (list, tuple)) and len(adcs) == 2):
+                adcs = np.array(adcs)
+            else:
+                print("Invalid 'adcs' input, should be None, int or ArrayLike")
+
+
+        if chans is None:
+            chans = np.array([0, Nchan])
+            
+        for j_adc in range(*adcs):
+            if output is None:
+                output_plot = None
+            else:
+                output_path = os.path.join(self.output_path, inputFile_name, f'adc{j_adc}')
+                os.makedirs(output_path, exist_ok=True)
+                output_plot=f"{output_path}/_summaryDC_adc{j_adc}.png"
+            
+            self._plot_summaryDC(j_adc, show_plot=show_plots, output=output_plot, peakFinder_minWidth=peakFinder_minWidth)
+
+        return None
+
     def fingerPlot_Amp_wvfms(self, minWidth=5, Nbins=100):
         fig_fP_Amp = plt.figure()#figsize=[12.8, 4.8])
         ax_fP_Amp = fig_fP_Amp.subplots()
@@ -376,7 +508,7 @@ class baselineWvfms:
 
         return None
     
-    def plot_wvfms(self, event, adc, chan, xlim = None):
+    def plot_wvfms(self, event, adc, chan, xlim=None):
         '''
         Plot the light waveforms.
 

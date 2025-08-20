@@ -1,58 +1,40 @@
 import sys
 import subprocess
-
-# Function to install missing packages
-def install(package):
-    subprocess.check_call([sys.executable, "-m", "pip", "install", package])
-
-# Ensure setuptools is installed to use pkg_resources
-try:
-    import pkg_resources
-except ImportError:
-    install('setuptools')
-    import pkg_resources
-
-# Ensure all non-standard packages are installed
-required_packages = [
-    'numpy', 'h5py', 'pandas', 'matplotlib'
-]    
-# , 'sqlalchemy', 'cmasher', 'IPython', 'PyMuPDF', 'pillow', 'uproot', 'h5flow', 'ipywidgets'
-# ]
-
-installed_packages = {pkg.key for pkg in pkg_resources.working_set}
-missing_packages = [pkg for pkg in required_packages if pkg not in installed_packages]
-
-if missing_packages:
-    for package in missing_packages:
-        install(package)
-
-# Import modules
-#import pymupdf
 import numpy as np
-#import pandas as pd
-# from datetime import datetime
-# import ipywidgets as widgets
-#from io import BytesIO
 import os
 sys.path.append(os.path.join(os.path.dirname(__file__), "..", ".."))
-#from src.proto_nd_flow.util.lut import LUT
-# from h5flow.core import resources
-# import itertools
-#import math
 import h5py
-#import cmasher as cmr
-#from IPython.display import display, clear_output
-#import matplotlib as mpl
 import matplotlib.pyplot as plt
-#from matplotlib import cm, colors
-#import matplotlib.image as mpimg
-#from matplotlib.patches import Rectangle
-#from matplotlib.colors import Normalize
-#from PIL import Image
-# from math import fabs
-#from time import sleep
-# import uproot
+from matplotlib.patches import Rectangle
+from matplotlib.backends.backend_pdf import PdfPages
 from scipy.optimize import curve_fit
+import logging
+
+# Setup module-level logger
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)  # Default level
+
+if not logger.handlers:
+    handler = logging.StreamHandler()
+    formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(funcName)s - %(message)s')
+    handler.setFormatter(formatter)
+    logger.addHandler(handler)
+
+def set_log_level(level_name: str):
+    """
+    Change log level at runtime.
+
+        input: level_name, choices=['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL']
+    
+    """
+    level = getattr(logging, level_name.upper(), None)
+    if isinstance(level, int):
+        logger.setLevel(level)
+        for handler in logger.handlers:
+            handler.setLevel(level)
+        logger.info(f"Log level changed to {level_name.upper()}")
+    else:
+        logger.error(f"Invalid log level: {level_name}")
 
 
 class calibWvfms:
@@ -72,7 +54,10 @@ class calibWvfms:
     '''
 
     # Initialize the class
-    def __init__(self, filedir, filename, output_path=None):
+    def __init__(self, filedir, filename, output_path=None, log_level=None):
+
+        if log_level != None:
+            set_log_level(log_level)
         
         # Open files
         f = h5py.File(filedir+filename, 'r')
@@ -265,7 +250,7 @@ class calibWvfms:
                 ax_wvfm.plot(peak_idx, self.light_wvfms[event][adc,chan][peak_idx], color='g', marker='x', ls='', label='Peaks found')
                 ax_wvfm.hlines(mean, xlim[0], xlim[1], color='r', ls='--', label='Mean')
                 self.Npeaks[event][adc,chan]=len(peak_idx)
-                print(f'{len(peak_idx)} peaks were found with a minWidth of {minWidth} above the mean.')
+
 
         if (baseline != None):
             ax_wvfm.hlines(baseline, xlim[0], xlim[1], color='k', ls='--', label='Baseline')
@@ -273,7 +258,10 @@ class calibWvfms:
         ax_wvfm.legend()
         ax_wvfm.set_title(f'Waveforms of Event {event} for ADC {adc}, Chan. {chan}')
 
-        if output is not None:
+        if isinstance(output, PdfPages):
+            output.savefig()
+            plt.close()
+        elif output is not None:
             fig_wvfm.savefig(output)
 
         if show_plot == False:
@@ -314,51 +302,67 @@ class calibWvfms:
     
         return None
     
-    def _plot_summaryDC(self, adc, show_plot=False, output=None, peakFinder_minWidth=5):
+
+    
+    def _plot_summaryDC(self, adc, show_plot=False, output=None, peakFinder_minWidth=5, inactive_channels=None):
         Nevents, Nadc, Nchan, Nticks = self.light_wvfms.shape
         # Compute the x-axis coordinate
         x_chan = np.arange(0, Nchan,  1)
+        xlim = [x_chan[0]-0.5, x_chan[-1]+0.5]
 
-        Nevents = 10
+        if inactive_channels is not None:
+            mask_inactive_chans = np.isin(x_chan, inactive_channels)
+            x_chan = x_chan[~mask_inactive_chans]
+
+        Nevents = 100
 
         # Setup the plot
         fig_summaryDC = plt.figure(figsize=[12.8, 4.8])
         ax_summaryDC = fig_summaryDC.subplots()
         
-        xlim = [x_chan[0], x_chan[-1]+1]
-
-        ax_summaryDC.set_xticks(np.arange(xlim[0], xlim[-1], 2))
         ax_summaryDC.set_xlim(xlim)
+        ax_summaryDC.set_xticks(np.arange(xlim[0]+0.5, xlim[-1]-0.5, 2))
+        
         ax_summaryDC.set_xlabel('Channel')
-        ax_summaryDC.set_ylabel('mean DC rate [MHz]')
+        ax_summaryDC.set_ylabel('mean DC rate [kHz]')
         ax_summaryDC.grid(True)
 
         # Compute DC rate
-        print('begin find peak')
+        # print('begin find peak')
         for i_event in range(Nevents):
-            for j_chan in range(Nchan):
-                print(f'event {i_event}, chan {j_chan}')
+            for j_chan in x_chan:
+                # print(f'event {i_event}, chan {j_chan}')
                 self.findPeak_wvfms(i_event, adc, j_chan, minWidth=peakFinder_minWidth)
 
-        peaks_sum = np.sum(self.Npeaks[:,adc,:], axis=0)
-        print(f' peaks sum shape{peaks_sum.shape}')
+        peaks_sum = np.sum(self.Npeaks[:,adc,x_chan], axis=0)
+        # print(f' peaks sum shape{peaks_sum.shape}')
         DC_rates = peaks_sum/(Nevents*Nticks*self.time_tick)
 
-        ax_summaryDC.plot(x_chan, DC_rates*10**-6, marker='.', ls='')
+        ax_summaryDC.plot(x_chan, DC_rates*10**-3, marker='.', ls='', label='Connected channels')
+        if inactive_channels is not None:
+            groups_inactive_channels = _group_inactive_channels(inactive_channels)
+            ax_summaryDC.add_patch(Rectangle((groups_inactive_channels[0][0]-0.5,ax_summaryDC.get_ylim()[0]), abs(groups_inactive_channels[0][-1]-groups_inactive_channels[0][0]+1), ax_summaryDC.get_ylim()[1]-ax_summaryDC.get_ylim()[0], color='r', alpha=0.1, zorder= 0, label='Disconnected channels'))
+            for group in groups_inactive_channels[1:]:
+                ax_summaryDC.add_patch(Rectangle((group[0]-0.5,ax_summaryDC.get_ylim()[0]), abs(group[-1]-group[0]+1), ax_summaryDC.get_ylim()[1]-ax_summaryDC.get_ylim()[0], color='r', alpha=0.1, zorder= 0))
 
         ax_summaryDC.legend()
         ax_summaryDC.set_title(f'mean DC rate of ADC {adc} (over {Nevents} events)')
 
-        if output is not None:
+        if isinstance(output, PdfPages):
+            output.savefig()
+            plt.close()
+        elif output is not None:
             fig_summaryDC.savefig(output)
+
 
         if show_plot == False:
             plt.close()
 
+
         return None
 
     
-    def plot_summaryDC(self, events=None, adcs=None, chans=None, threshold=None, peakFinder_minWidth=5, output=None, show_plots=False):
+    def plot_summaryDC(self, events=None, adcs=None, chans=None, threshold=None, peakFinder_minWidth=5, output=None, show_plots=False, inactive_channels=None):
         inputFile_name = self.filename.split(".")[0]
 
         Nevents, Nadc, Nchan, _ = self.light_wvfms.shape
@@ -393,11 +397,51 @@ class calibWvfms:
             else:
                 output_path = os.path.join(self.output_path, inputFile_name, f'adc{j_adc}')
                 os.makedirs(output_path, exist_ok=True)
-                output_plot=f"{output_path}/_summaryDC_adc{j_adc}.png"
+                output_plot=f"{output_path}/summaryDC_adc{j_adc}.png"
             
-            self._plot_summaryDC(j_adc, show_plot=show_plots, output=output_plot, peakFinder_minWidth=peakFinder_minWidth)
+            self._plot_summaryDC(j_adc, show_plot=show_plots, output=output_plot, peakFinder_minWidth=peakFinder_minWidth, inactive_channels=inactive_channels)
 
         return None
+    
+    def plot_DC_pdf(self, adcs=None, chans=None, threshold=None, peakFinder_minWidth=5, output=None, show_plots=False, inactive_channels=None):
+        inputFile_name = self.filename.split(".")[0]
+
+        _, Nadc, Nchan, _ = self.light_wvfms.shape
+
+        if adcs is None:
+            adcs = np.array([0, Nadc])
+        else:
+            if isinstance(adcs, int):
+                adcs = np.array([adcs, adcs+1])
+            elif (isinstance(adcs, (list, tuple)) and len(adcs) == 2):
+                adcs = np.array(adcs)
+            else:
+                print("Invalid 'adcs' input, should be None, int or ArrayLike")
+
+        if chans is None:
+            chans = np.array([0, Nchan])
+
+        output_pdf = os.path.join(self.output_path, inputFile_name)
+        os.makedirs(output_pdf, exist_ok=True)
+
+        i_event = 7
+
+        output_path = os.path.join(self.output_path, inputFile_name)
+        logger.info(f'The summary pdf will be created in the folder {output_path}')
+
+        for j_adc in range(*adcs):
+            output_path_adc = os.path.join(output_path, f'adc{j_adc}')
+            os.makedirs(output_path_adc, exist_ok=True)
+            output_pdf=f"{output_path_adc}/summaryDC_adc{j_adc}.pdf"
+
+            with PdfPages(output_pdf) as summary_pdf:
+                self._plot_summaryDC(j_adc, show_plot=show_plots, output=summary_pdf, peakFinder_minWidth=peakFinder_minWidth, inactive_channels=inactive_channels)
+                for k_chan in range(*chans):
+                    self.plot_wvfm(i_event, j_adc, k_chan, threshold=threshold, peakFinder=True, minWidth=peakFinder_minWidth, output=summary_pdf, show_plot=show_plots)
+    
+            logger.info(f'The summary pdf of adc {j_adc} was created')
+        
+
 
     def fingerPlot_Amp_wvfms(self, minWidth=5, Nbins=100):
         fig_fP_Amp = plt.figure()#figsize=[12.8, 4.8])
@@ -550,3 +594,21 @@ def _multigauss(x, norm1, mu1, sig1, norm2, mu2, sig2, norm3, mu3, sig3):
     y += _gauss(x, norm2, mu2, sig2)
     y += _gauss(x, norm3, mu3, sig3)
     return y
+
+def _group_inactive_channels(inactive_channels):
+        groups_inactive_channel = []
+        start_chan = inactive_channels[0]
+        prev_chan = inactive_channels[0]
+
+        for chan in inactive_channels[1:]:
+            if chan == prev_chan + 1:
+                # still consecutive, extend the run
+                prev_chan = chan
+            else:
+                # break and save the [ststart_chanart, prev_chan] range
+                groups_inactive_channel.append([start_chan, prev_chan])
+                start_chan = chan
+                prev_chan = chan
+        groups_inactive_channel.append([start_chan, prev_chan])  # add the last range
+        return groups_inactive_channel
+

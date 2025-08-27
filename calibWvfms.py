@@ -45,7 +45,7 @@ class calibWvfms:
 
             - filedir          (str):   Path to input file
             - filename         (str):   Name of input flow file
-            - ouput_path       (str):   Path where to save the figures, if None: save in ./evD_{filename}/ (default: None)
+            - ouput_path       (str):   Path where to save the figures, if None: saved in ./calibWvfms_{filename} (default: None)
             - log_level        (str):   Log level
                     - 'DEBUG'
                     - 'INFO'
@@ -76,7 +76,7 @@ class calibWvfms:
         
         # Set the output path
         if (output_path is None):
-            self.output_path = os.path.join(os.path.dirname(__file__) ,f'evD_{self.filename}/')
+            self.output_path = os.path.join(os.path.dirname(__file__) ,f'calibWvfms_{self.filename}/')
         else:
             self.output_path = os.path.abspath(output_path)
 

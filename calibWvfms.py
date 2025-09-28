@@ -68,20 +68,19 @@ class calibWvfms:
             set_log_level(log_level)
         
         # Open files
-        f = h5py.File(filedir+filename, 'r')
-
+        f = h5py.File(os.path.join(filedir, filename), 'r')
+ 
         # Set general class-level variables from inputs
         self.filedir = filedir
         self.filename = filename
         
         # Set the output path
         if (output_path is None):
-            self.output_path = os.path.join(os.path.dirname(__file__) ,f'calibWvfms_{self.filename}/')
+            self.output_path = os.path.join(os.path.dirname(__file__) ,f'calibWvfms_{self.filename.split(".")[0]}/')
         else:
             self.output_path = os.path.abspath(output_path)
 
         # Load light events, waveform datasets
-        self.light_events = f['light/events/data']
         self.light_wvfms = f['light/wvfm/data']['samples']
 
         # Initialize variable(s) 
@@ -99,7 +98,7 @@ class calibWvfms:
 
         logger.info(f'Processing file {filedir+filename}')
         logger.info(f'The output path is set to {self.output_path}')
-        logger.info(f"Number of events in the selection: {len(self.light_events)}")
+        logger.info(f"Number of events in the selection: {self.light_wvfms.shape[0]}")
     
 
     
@@ -252,35 +251,37 @@ class calibWvfms:
         Nevents, Nadc, Nchan, _ = self.light_wvfms.shape
 
         if events is None:
-            events = np.array([0, Nevents])
+            events = np.arange(0, Nevents)
         else:
             if isinstance(events, int):
-                events = np.array([events, events+1])
-            elif (isinstance(events, (list, tuple)) and len(events) == 2):
+                events = np.array([events])
+            elif (isinstance(events, list)):
                 events = np.array(events)
             else:
-                logger.error("Invalid 'events' input, should be None int or ArrayLike")
+                logger.error("Invalid 'events' input, should be None int or list")
 
         if adcs is None:
             adcs = np.arange([0, Nadc])
+        elif isinstance(adcs, int):
+            adcs = np.array([adcs])
+        elif (isinstance(adcs, list)):
+            adcs = np.array(adcs)
         else:
-            if isinstance(adcs, int):
-                adcs = np.array([adcs])
-            elif (isinstance(adcs, list)):
-                adcs = np.array(adcs)
-            else:
-                logger.error("Invalid 'adcs' input, should be None, int or list")
+            logger.error("Invalid 'adcs' input, should be None, int or list")
 
         if chans is None:
-            chans = np.array([0, Nchan])
-        else:
+            chans = np.arange([0, Nchan])
+        elif isinstance(chans, int):
+            chans = np.array([chans])
+        elif (isinstance(chans, list)):
             chans = np.array(chans)
-            
+        else:
+            logger.error("Invalid 'chans' input, should be None, int or list")
         # print(events, adcs, chans)
 
-        for i_event in range(*events):
-            for j_adc in range(*adcs):
-                    for k_chan in range(*chans):
+        for i_event in events:
+            for j_adc in adcs:
+                    for k_chan in chans:
                         if save_plots == False:
                             output_plot = None
                         elif save_plots == True:
@@ -404,7 +405,7 @@ class calibWvfms:
             chans = np.array([0, Nchan])
             
         for j_adc in adcs:
-            if output == False:
+            if save_plots == False:
                 output_plot = None
             else:
                 output_path = os.path.join(self.output_path, inputFile_name, f'adc{j_adc}')
@@ -442,7 +443,7 @@ class calibWvfms:
         _, Nadc, Nchan, _ = self.light_wvfms.shape
 
         if adcs is None:
-            adcs = np.array([0, Nadc])
+            adcs = np.arange(0, Nadc)
         else:
             if isinstance(adcs, int):
                 adcs = np.array([adcs])

@@ -1,0 +1,3 @@
+*.pdf
+*mpd_run_*
+__pycache__*

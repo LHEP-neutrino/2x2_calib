@@ -755,8 +755,14 @@ class calibWvfms:
                 
                 # Compute p0
                 logger.debug(f"Compute fingerplots p0 of ADC {i_adc}, chan. {j_chan}")
-                fit_p0, fit_bounds, fit_lim = self._compute_fingerplots_p0(counts=counts, bin_centers=bin_centers,
+                try:
+                    fit_p0, fit_bounds, fit_lim = self._compute_fingerplots_p0(counts=counts, bin_centers=bin_centers,
                                                                             width=width)
+                except Exception as e:
+                    logger.warning(f"No initial guess was found for fingerplot of ADC {i_adc}, chan. {j_chan}, the fitting procedure was aborded: {e}")
+                    self.fit_status[i_adc][j_chan] = 2
+                    continue
+
                 print(f"fit_bounds: {fit_bounds}")
                 print(f"fit_p0: {fit_p0}")
                 self.fit_lim[i_adc][j_chan] = fit_lim
@@ -767,7 +773,6 @@ class calibWvfms:
 
                 # Fit the fingerplots
                 try:
-                    
                     sigma = np.sqrt(counts[fit_lim[0]:fit_lim[1]])
                     sigma[sigma == 0] = 1 # To avoid division by zero
                     print(f"sigma: {sigma}")
